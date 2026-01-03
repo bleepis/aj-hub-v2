@@ -65,26 +65,9 @@ local function removeCheckpoint()
     end
 end
 
--- Teleport fixes orientation and camera for Shift Lock
 local function teleportCheckpoint()
     if checkpoints[#checkpoints] and hrp then
-        local cf = checkpoints[#checkpoints]
-
-        -- Save current camera type
-        local oldCameraType = Camera.CameraType
-        Camera.CameraType = Enum.CameraType.Scriptable
-
-        -- Set HRP position and orientation
-        hrp.CFrame = cf
-
-        -- Update camera to match checkpoint rotation
-        Camera.CFrame = cf
-
-        -- Wait a tiny bit to settle physics
-        task.wait(0.03)
-
-        -- Restore camera type
-        Camera.CameraType = oldCameraType
+        hrp.CFrame = checkpoints[#checkpoints]
     end
 end
 
