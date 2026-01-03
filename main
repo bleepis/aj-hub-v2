@@ -1,0 +1,312 @@
+if getgenv().CheckpointFlyLoaded then return end
+getgenv().CheckpointFlyLoaded = true
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local player = Players.LocalPlayer
+
+-- Wait for a child safely
+local function waitForChildSafe(parent, name)
+    local child = parent:FindFirstChild(name)
+    while not child do
+        child = parent:FindFirstChild(name)
+        task.wait()
+    end
+    return child
+end
+
+-- Character setup
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = waitForChildSafe(character, "HumanoidRootPart")
+local humanoid = waitForChildSafe(character, "Humanoid")
+local animator = humanoid:FindFirstChildOfClass("Animator")
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+    hrp = waitForChildSafe(char, "HumanoidRootPart")
+    humanoid = waitForChildSafe(char, "Humanoid")
+    animator = humanoid:FindFirstChildOfClass("Animator")
+end)
+
+-- Settings
+local keybinds = {Place=Enum.KeyCode.F, Remove=Enum.KeyCode.T, Teleport=Enum.KeyCode.R, Noclip=Enum.KeyCode.One}
+local checkpoints = {}
+local visuals = {}
+local flying = false
+local speed = 70
+local checkpointTransparency = 0.5
+local moveKeys = {W=false, A=false, S=false, D=false, Space=false, Ctrl=false}
+local bv, bg
+
+-- Functions
+local function placeCheckpoint()
+    if not hrp then return end
+    local cf = hrp.CFrame
+    table.insert(checkpoints, cf)
+    local box = Instance.new("Part")
+    box.Size = hrp.Size
+    box.CFrame = cf
+    box.Anchored = true
+    box.CanCollide = false
+    box.Transparency = checkpointTransparency
+    box.Material = Enum.Material.Neon
+    box.Color = Color3.fromRGB(255,255,255)
+    box.Parent = workspace
+    table.insert(visuals, box)
+end
+
+local function removeCheckpoint()
+    if #checkpoints > 0 then
+        table.remove(checkpoints)
+        local v = table.remove(visuals)
+        if v then v:Destroy() end
+    end
+end
+
+-- Teleport fixes orientation and camera for Shift Lock
+local function teleportCheckpoint()
+    if checkpoints[#checkpoints] and hrp then
+        local cf = checkpoints[#checkpoints]
+
+        -- Save current camera type
+        local oldCameraType = Camera.CameraType
+        Camera.CameraType = Enum.CameraType.Scriptable
+
+        -- Set HRP position and orientation
+        hrp.CFrame = cf
+
+        -- Update camera to match checkpoint rotation
+        Camera.CFrame = cf
+
+        -- Wait a tiny bit to settle physics
+        task.wait(0.03)
+
+        -- Restore camera type
+        Camera.CameraType = oldCameraType
+    end
+end
+
+-- Movement
+UIS.InputBegan:Connect(function(input)
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.W then moveKeys.W = true end
+    if input.KeyCode == Enum.KeyCode.A then moveKeys.A = true end
+    if input.KeyCode == Enum.KeyCode.S then moveKeys.S = true end
+    if input.KeyCode == Enum.KeyCode.D then moveKeys.D = true end
+    if input.KeyCode == Enum.KeyCode.Space then moveKeys.Space = true end
+    if input.KeyCode == Enum.KeyCode.LeftControl then moveKeys.Ctrl = true end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then moveKeys.W = false end
+    if input.KeyCode == Enum.KeyCode.A then moveKeys.A = false end
+    if input.KeyCode == Enum.KeyCode.S then moveKeys.S = false end
+    if input.KeyCode == Enum.KeyCode.D then moveKeys.D = false end
+    if input.KeyCode == Enum.KeyCode.Space then moveKeys.Space = false end
+    if input.KeyCode == Enum.KeyCode.LeftControl then moveKeys.Ctrl = false end
+end)
+
+local function toggleFly()
+    flying = not flying
+    if flying then
+        if animator then for _,t in pairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end end
+        humanoid.AutoRotate = false
+        humanoid.PlatformStand = true
+        bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(1e6,1e6,1e6)
+        bv.Velocity = Vector3.zero
+        bv.Parent = hrp
+        bg = Instance.new("BodyGyro")
+        bg.MaxTorque = Vector3.new(1e6,1e6,1e6)
+        bg.P = 1e5
+        bg.CFrame = hrp.CFrame
+        bg.Parent = hrp
+    else
+        if bv then bv:Destroy(); bv=nil end
+        if bg then bg:Destroy(); bg=nil end
+        humanoid.AutoRotate = true
+        humanoid.PlatformStand = false
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not flying or not hrp or not bv or not bg then return end
+    local camCF = Camera.CFrame
+    local dir = Vector3.zero
+    if moveKeys.W then dir += camCF.LookVector end
+    if moveKeys.S then dir -= camCF.LookVector end
+    if moveKeys.D then dir += camCF.RightVector end
+    if moveKeys.A then dir -= camCF.RightVector end
+    if moveKeys.Space then dir += Vector3.new(0,1,0) end
+    if moveKeys.Ctrl then dir -= Vector3.new(0,1,0) end
+    if dir.Magnitude > 0 then dir = dir.Unit end
+    bv.Velocity = dir * speed
+    bg.CFrame = CFrame.new(hrp.Position, hrp.Position + camCF.LookVector)
+end)
+
+-- GUI
+local function waitForPlayerGui()
+    while not player:FindFirstChild("PlayerGui") do task.wait() end
+    return player:WaitForChild("PlayerGui")
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "CheckpointFlyGUI"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = waitForPlayerGui()
+
+local menu = Instance.new("Frame")
+menu.Size = UDim2.fromScale(0.35,0.45)
+menu.Position = UDim2.fromScale(0.5,0.5)
+menu.AnchorPoint = Vector2.new(0.5,0.5)
+menu.BackgroundColor3 = Color3.fromRGB(10,30,70)
+menu.BackgroundTransparency = 0.2
+menu.BorderSizePixel = 0
+menu.ZIndex = 9
+menu.Visible = false
+menu.ClipsDescendants = true
+menu.Parent = gui
+local menuCorner = Instance.new("UICorner")
+menuCorner.CornerRadius = UDim.new(0,12)
+menuCorner.Parent = menu
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,10)
+layout.FillDirection = Enum.FillDirection.Vertical
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Top
+layout.Parent = menu
+
+-- Keybind rows
+local function createKeybindRow(name)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(0.9,0,0,40)
+    row.BackgroundTransparency = 1
+    row.Parent = menu
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5,-5,1,0)
+    label.Position = UDim2.new(0,0,0,0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(200,230,255)
+    label.Font = Enum.Font.Gotham
+    label.TextScaled = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+    local valueBox = Instance.new("TextButton")
+    valueBox.Size = UDim2.new(0.5,0,1,0)
+    valueBox.Position = UDim2.new(0.5,5,0,0)
+    valueBox.BackgroundColor3 = Color3.fromRGB(15,60,120)
+    valueBox.Text = keybinds[name].Name
+    valueBox.TextColor3 = Color3.fromRGB(180,220,255)
+    valueBox.Font = Enum.Font.Gotham
+    valueBox.TextScaled = true
+    valueBox.TextWrapped = true
+    valueBox.Parent = row
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = valueBox
+    valueBox.MouseButton1Click:Connect(function()
+        valueBox.Text = "[Press Key]"
+        local conn
+        conn = UIS.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                keybinds[name] = input.KeyCode
+                valueBox.Text = input.KeyCode.Name
+                conn:Disconnect()
+            end
+        end)
+    end)
+end
+
+-- Textbox settings
+local function createTextSetting(labelText, initialValue, onChange)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(0.9,0,0,40)
+    row.BackgroundTransparency = 1
+    row.Parent = menu
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.5,-5,1,0)
+    label.Position = UDim2.new(0,0,0,0)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.TextColor3 = Color3.fromRGB(200,230,255)
+    label.Font = Enum.Font.Gotham
+    label.TextScaled = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+    local tb = Instance.new("TextBox")
+    tb.Size = UDim2.new(0.5,0,1,0)
+    tb.Position = UDim2.new(0.5,5,0,0)
+    tb.BackgroundColor3 = Color3.fromRGB(15,60,120)
+    tb.Text = tostring(initialValue)
+    tb.TextColor3 = Color3.fromRGB(180,220,255)
+    tb.Font = Enum.Font.Gotham
+    tb.TextScaled = true
+    tb.ClearTextOnFocus = false
+    tb.TextWrapped = true
+    tb.Parent = row
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = tb
+    tb.FocusLost:Connect(function()
+        local val = tonumber(tb.Text)
+        if val then onChange(val) tb.Text = tostring(val) else tb.Text = tostring(initialValue) end
+    end)
+end
+
+createKeybindRow("Place")
+createKeybindRow("Remove")
+createKeybindRow("Teleport")
+createKeybindRow("Noclip")
+createTextSetting("Checkpoint Transparency", checkpointTransparency, function(val) if val>=0 and val<=1 then checkpointTransparency=val end end)
+createTextSetting("Noclip Speed", speed, function(val) if val>0 then speed=val end end)
+
+-- Toggle menu with Right Ctrl
+UIS.InputBegan:Connect(function(input)
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        if menu then
+            menu.Visible = not menu.Visible
+        end
+    end
+end)
+
+-- Keybinds (place/remove/teleport/noclip)
+UIS.InputBegan:Connect(function(input)
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == keybinds.Place then placeCheckpoint()
+    elseif input.KeyCode == keybinds.Remove then removeCheckpoint()
+    elseif input.KeyCode == keybinds.Teleport then teleportCheckpoint()
+    elseif input.KeyCode == keybinds.Noclip then toggleFly()
+    end
+end)
+
+-- Bottom-left "AJ hub has loaded" text
+local loadedLabel = Instance.new("TextLabel")
+loadedLabel.Size = UDim2.fromOffset(250,40)
+loadedLabel.Position = UDim2.fromScale(0.01,0.95)
+loadedLabel.AnchorPoint = Vector2.new(0,1)
+loadedLabel.BackgroundTransparency = 1
+loadedLabel.TextColor3 = Color3.fromRGB(180,220,255)
+loadedLabel.TextScaled = true
+loadedLabel.Font = Enum.Font.Gotham
+loadedLabel.Text = "AJ hub has loaded"
+loadedLabel.TextTransparency = 1
+loadedLabel.Parent = gui
+
+task.spawn(function()
+    for i=0,1,0.02 do
+        loadedLabel.TextTransparency = 1-i
+        task.wait(0.03)
+    end
+    task.wait(10)
+    for i=0,1,0.02 do
+        loadedLabel.TextTransparency = i
+        task.wait(0.03)
+    end
+    loadedLabel:Destroy()
+end)
