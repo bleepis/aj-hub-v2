@@ -35,8 +35,8 @@ local keybinds = {Place=Enum.KeyCode.F, Remove=Enum.KeyCode.T, Teleport=Enum.Key
 local checkpoints = {}
 local visuals = {}
 local flying = false
-local speed = 70
-local checkpointTransparency = 0.5
+local speed = 50
+local checkpointTransparency = 1
 local moveKeys = {W=false, A=false, S=false, D=false, Space=false, Ctrl=false}
 local bv, bg
 
